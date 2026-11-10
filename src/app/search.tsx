@@ -1,13 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { MovieCard } from '@/components/MovieCard';
 import { Button } from '@/components/ui/Button';
 import { Screen } from '@/components/ui/Screen';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { colors, fonts, radius } from '@/constants/theme';
-import { useAsync } from '@/hooks/useAsync';
+import { useCachedAsync } from '@/hooks/useCachedAsync';
 import { getBackendCatalog, searchBackendTitles } from '@/services/backend';
 import type { MediaKind } from '@/types';
 import { detailPath } from '@/utils/format';
@@ -18,17 +18,33 @@ export default function Search() {
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const [kind, setKind] = useState<SearchKind>('all');
-  useEffect(() => {
-    const timer = setTimeout(() => setSearch(query.trim()), 300);
-    return () => clearTimeout(timer);
-  }, [query]);
-  const { data, error, loading, retry } = useAsync(
+  const { data, error, loading, retry } = useCachedAsync(
     () => search ? searchBackendTitles(search, kind) : getBackendCatalog(kind),
+    `search:${kind}:${search.toLocaleLowerCase() || 'catalog'}`,
     [search, kind],
   );
   const { width } = useWindowDimensions();
   const cardWidth = (width - 44) / 2;
   const results = data ?? [];
+  const submitSearch = () => {
+    const nextSearch = query.trim();
+    if (nextSearch === search) retry();
+    else setSearch(nextSearch);
+  };
+  const clearSearch = () => {
+    setQuery('');
+    if (search) setSearch('');
+    else retry();
+  };
+  const feedback = query.trim() !== search
+    ? `Press Search to find “${query.trim()}”.`
+    : loading
+      ? search ? 'Refreshing results…' : 'Updating your library…'
+      : error && data
+        ? 'Could not refresh. Showing saved results.'
+        : search
+          ? `${results.length} result${results.length === 1 ? '' : 's'} for “${search}”.`
+          : `${results.length} titles in your library.`;
 
   return (
     <Screen edges={['top']}>
@@ -38,23 +54,27 @@ export default function Search() {
         </Pressable>
         <Text style={styles.heading}>Search</Text>
       </View>
-      <View style={styles.searchBox}>
-        <Ionicons name="search" size={19} color={colors.muted} />
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Search movies and shows"
-          placeholderTextColor={colors.muted}
-          autoFocus
-          returnKeyType="search"
-          style={styles.input}
-          accessibilityLabel="Search your movie and show library"
-        />
-        {query ? (
-          <Pressable onPress={() => setQuery('')} hitSlop={10} accessibilityLabel="Clear search">
-            <Ionicons name="close-circle" size={19} color={colors.muted} />
-          </Pressable>
-        ) : null}
+      <View style={styles.searchRow}>
+        <View style={styles.searchBox}>
+          <Ionicons name="search" size={19} color={colors.muted} />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search movies and shows"
+            placeholderTextColor={colors.muted}
+            autoFocus
+            returnKeyType="search"
+            onSubmitEditing={submitSearch}
+            style={styles.input}
+            accessibilityLabel="Search your movie and show library"
+          />
+          {query ? (
+            <Pressable onPress={clearSearch} hitSlop={10} accessibilityLabel="Clear search">
+              <Ionicons name="close-circle" size={19} color={colors.muted} />
+            </Pressable>
+          ) : null}
+        </View>
+        <Button title="Search" icon="search" onPress={submitSearch} style={styles.searchButton} />
       </View>
       <SegmentedControl
         options={[
@@ -66,22 +86,26 @@ export default function Search() {
         onChange={setKind}
         style={styles.filter}
       />
-      {loading ? <ActivityIndicator color={colors.red} size="large" style={{ marginTop: 36 }} /> : null}
-      {error ? (
+      <View style={styles.feedbackRow} accessibilityLiveRegion="polite">
+        {loading ? <ActivityIndicator size="small" color={colors.red} /> : null}
+        <Text numberOfLines={2} style={styles.feedback}>{feedback}</Text>
+      </View>
+      {loading && !data ? <ActivityIndicator color={colors.red} size="large" style={{ marginTop: 20 }} /> : null}
+      {error && !data ? (
         <View style={styles.state}>
           <Text style={styles.message}>{error}</Text>
           <Button title="Try again" variant="secondary" onPress={retry} />
         </View>
       ) : null}
-      {!loading && !error ? (
-        <FlatList
+      <FlatList
           key={kind}
           data={results}
           numColumns={2}
               keyExtractor={(item) => String(item.id)}
           columnWrapperStyle={styles.resultRow}
           contentContainerStyle={styles.results}
-          keyboardShouldPersistTaps="handled"
+          keyboardShouldPersistTaps="always"
+          keyboardDismissMode="none"
           renderItem={({ item }) => (
             <MovieCard
               image={item.poster ?? item.backdrop}
@@ -94,10 +118,9 @@ export default function Search() {
             />
           )}
           ListEmptyComponent={
-            <Text style={styles.empty}>{query ? 'No matching titles found.' : 'Search your library by title or description.'}</Text>
+            <Text style={styles.empty}>{loading ? 'Loading titles…' : search ? `No titles found for “${search}”.` : error ?? 'Your library is empty.'}</Text>
           }
         />
-      ) : null}
     </Screen>
   );
 }
@@ -106,9 +129,13 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 8 },
   back: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center' },
   heading: { fontFamily: fonts.bold, fontSize: 21, color: colors.white },
-  searchBox: { height: 48, marginHorizontal: 16, marginTop: 6, marginBottom: 12, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radius.md },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginTop: 6, marginBottom: 8 },
+  searchBox: { flex: 1, height: 48, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radius.md },
+  searchButton: { paddingHorizontal: 12 },
   input: { flex: 1, height: '100%', color: colors.white, fontFamily: fonts.regular, fontSize: 15 },
   filter: { marginHorizontal: 16, marginBottom: 8 },
+  feedbackRow: { minHeight: 22, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  feedback: { flex: 1, fontFamily: fonts.regular, fontSize: 12, color: colors.muted },
   results: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24, gap: 18 },
   resultRow: { gap: 12 },
   empty: { padding: 24, color: colors.muted, textAlign: 'center', fontFamily: fonts.regular },

@@ -5,7 +5,7 @@ import { FlatList, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, 
 import { MovieCard } from '@/components/MovieCard';
 import { ErrorState, Loading, Screen } from '@/components/ui/Screen';
 import { colors, fonts } from '@/constants/theme';
-import { useAsync } from '@/hooks/useAsync';
+import { useCachedAsync } from '@/hooks/useCachedAsync';
 import { getBackendCategoryTitles } from '@/services/backend';
 import type { MediaKind } from '@/types';
 import { detailPath } from '@/utils/format';
@@ -20,13 +20,16 @@ export default function Category() {
     const timer = setTimeout(() => setSearch(searchDraft.trim()), 350);
     return () => clearTimeout(timer);
   }, [searchDraft]);
-  const { data, error, loading, retry } = useAsync(
+  const cacheKey = `category:${kind}:${type ?? 'genre'}:${id}:${search.toLocaleLowerCase()}`;
+  const { data, error, loading, retry } = useCachedAsync(
     () => getBackendCategoryTitles(kind, Number(id), type === 'library' ? 'library' : 'genre', search),
+    cacheKey,
     [kind, id, type, search],
   );
 
-  if (loading) return <Loading />;
-  if (error || !data) return <ErrorState message={error ?? 'Nothing found.'} onRetry={retry} />;
+  if (!data && loading) return <Loading />;
+  if (!data && error) return <ErrorState message={error} onRetry={retry} />;
+  if (!data) return <ErrorState message="Nothing found." onRetry={retry} />;
 
   return (
     <Screen>

@@ -4,16 +4,17 @@ import React from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Loading, ErrorState, Screen } from '@/components/ui/Screen';
 import { colors, fonts, radius } from '@/constants/theme';
-import { useAsync } from '@/hooks/useAsync';
+import { useCachedAsync } from '@/hooks/useCachedAsync';
 import { getBackendCollections } from '@/services/backend';
 import type { MediaKind } from '@/types';
 
 export default function GenresScreen() {
   const { kind } = useLocalSearchParams<{ kind: MediaKind }>();
-  const { data, error, loading, retry } = useAsync(() => getBackendCollections(kind), [kind]);
+  const { data, error, loading, retry } = useCachedAsync(() => getBackendCollections(kind), `genres:${kind}`, [kind]);
 
-  if (loading) return <Loading />;
-  if (error || !data) return <ErrorState message={error ?? 'Could not load genres.'} onRetry={retry} />;
+  if (!data && loading) return <Loading />;
+  if (!data && error) return <ErrorState message={error} onRetry={retry} />;
+  if (!data) return <ErrorState message="Could not load genres." onRetry={retry} />;
 
   const genres = [...data.genres].sort((a, b) => b.title_count - a.title_count || a.name.localeCompare(b.name));
   const label = kind === 'movie' ? 'movies' : 'shows';

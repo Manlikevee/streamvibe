@@ -15,7 +15,7 @@ import { colors, fonts, radius } from '@/constants/theme';
 import { getBackendCollections, getBackendGenreTitles } from '@/services/backend';
 import type { MediaKind, Title } from '@/types';
 import { detailPath, formatCount, formatDate } from '@/utils/format';
-import { useAsync } from '@/hooks/useAsync';
+import { useCachedAsync } from '@/hooks/useCachedAsync';
 import { router } from 'expo-router';
 
 interface GenreBlock {
@@ -44,7 +44,7 @@ async function loadHome(kind: MediaKind) {
 
 export default function Home() {
   const [kind, setKind] = useState<MediaKind>('movie');
-  const { data, error, loading, retry } = useAsync(() => loadHome(kind), [kind]);
+  const { data, error, loading, retry } = useCachedAsync(() => loadHome(kind), `home:${kind}`, [kind]);
   const { width } = useWindowDimensions();
   const cardW = width * 0.72;
   const artwork = data
@@ -67,14 +67,14 @@ export default function Home() {
         contentContainerStyle={{ paddingBottom: 8 }}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={retry} tintColor={colors.red} colors={[colors.red]} />}
       >
-        {loading ? (
+        {!data ? (loading ? (
           <ActivityIndicator color={colors.red} style={{ marginTop: 60 }} size="large" />
-        ) : error || !data ? (
+        ) : (
           <View style={styles.errorBox}>
             <Text style={styles.errorText}>{error ?? 'Could not load titles.'}</Text>
             <Button title="Try again" onPress={retry} />
           </View>
-        ) : (
+        )) : (
           <>
             {data.trending[0] ? <Hero item={data.trending[0]} fallbackImage={fallbackArtwork} /> : null}
             <SegmentedControl

@@ -3,12 +3,12 @@ import React from 'react';
 import { SeasonList } from '@/components/SeasonList';
 import { TitleDetail } from '@/components/TitleDetail';
 import { ErrorState, Loading } from '@/components/ui/Screen';
-import { useAsync } from '@/hooks/useAsync';
+import { useCachedAsync } from '@/hooks/useCachedAsync';
 import { getBackendTitleDetail } from '@/services/backend';
 
 export default function ShowDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, error, loading, retry } = useAsync(() => getBackendTitleDetail(id), [id]);
+  const { data, error, loading, retry } = useCachedAsync(() => getBackendTitleDetail(id), `title:${id}`, [id]);
 
   if (loading) return <Loading />;
   if (error || !data) return <ErrorState message={error ?? 'Show not found.'} onRetry={retry} />;
